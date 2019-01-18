@@ -10,7 +10,7 @@ class MQTTHandler
     # Check for required environment variables
     raise 'Missing environment MQTT_URL' if ENV['MQTT_URL'].nil?
 
-    SocketClient.instance.subscribe_events('mqtt_message_handler')
+    SocketClient.instance.subscribe_messages('mqtt_message_handler')
   end
 
   def start!
@@ -40,12 +40,28 @@ class MQTTHandler
   end
 
   def message_loop
-    events = SocketClient.instance.drain_events('mqtt_message_handler')
-    return unless events.present?
+    messages = SocketClient.instance.drain_messages('mqtt_message_handler')
+    return unless messages.present?
 
-    info "Processing #{events.size} messages"
+    info "Processing #{messages.size} messages"
 
-    events.each do |event|
+    parsed_events = messages.map do |message|
+      next if (match = /\A(?<event_type>[0-9a-z]+)(?<event_data>.*)\z/.match(message)).nil?
+      next if (event_data = match[:event_data].strip).blank?
+
+      begin
+        event_json = JSON.parse(event_data)
+        next unless event_json.is_a?(Array) && event_json[1].respond_to?(:key?) && event_json[1]['_tenantId']
+
+        event_json[1].transform_keys { |key| key.sub(/^_/, '') }
+      rescue JSON::ParserError
+        error "Message not valid JSON #{event_data} - #{e}"
+      end
+    end.compact
+
+    return unless parsed_events.present?
+
+    parsed_events.each do |event|
       topic = "tenants/#{event['_tenantId']}" \
               "/transmitters/#{event['tiraid']['identifier']['type']}/#{event['tiraid']['identifier']['value']}" \
               '/events/rtls'

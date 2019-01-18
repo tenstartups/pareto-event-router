@@ -78,12 +78,12 @@ class SocketClient
     self.last_message_received_at = nil
   end
 
-  def subscribe_events(client_id)
+  def subscribe_messages(client_id)
     subscribers[client_id] = Queue.new
     client_id
   end
 
-  def unsubscribe_events(client_id)
+  def unsubscribe_messages(client_id)
     subscribers.delete(client_id)
     client_id
   end
@@ -100,30 +100,19 @@ class SocketClient
 
   def handle_message(message)
     self.last_message_received_at = Time.now.to_i
-
-    return unless (match = /\A(?<event_type>[0-9a-z]+)(?<event_data>.*)\z/.match(message.data))
-    return if (event_data = match[:event_data].strip).nil?
-
-    begin
-      event_json = JSON.parse(event_data)
-      return unless event_json.is_a?(Array) && event_json[1].respond_to?(:key?) && event_json[1]['_tenantId']
-
-      info "RTLS message received for #{event_json[1]['deviceId']}"
-      subscribers.values.each { |q| q.push(event_json[1]) }
-    rescue JSON::ParserError
-      error "Message not valid JSON #{event_data} - #{e}"
-    end
+    info "Received RTLS message #{message.data.truncate(100, omission: '... (truncated)')}"
+    subscribers.values.each { |q| q.push(message.data) }
   end
 
-  def next_event(client_id)
+  def next_message(client_id)
     subscribers[client_id].pop if subscribers[client_id].length.positive?
   end
 
-  def drain_events(client_id)
-    events = []
+  def drain_messages(client_id)
+    messages = []
     subscribers[client_id].length.times do
-      events << subscribers[client_id].pop
+      messages << subscribers[client_id].pop
     end
-    events
+    messages
   end
 end

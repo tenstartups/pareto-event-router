@@ -15,7 +15,7 @@ class ElasticsearchHandler
     raise 'Missing environment ELASTICSEARCH_INDEX' if ENV['ELASTICSEARCH_INDEX'].nil?
     raise 'Missing environment ELASTICSEARCH_TYPE' if ENV['ELASTICSEARCH_TYPE'].nil?
 
-    SocketClient.instance.subscribe_events('es_message_handler')
+    SocketClient.instance.subscribe_messages('es_message_handler')
   end
 
   def start!
@@ -47,13 +47,32 @@ class ElasticsearchHandler
   end
 
   def message_loop
-    events = SocketClient.instance.drain_events('es_message_handler')
-    return unless events.present?
+    messages = SocketClient.instance.drain_messages('es_message_handler')
+    return unless messages.present?
 
-    info "Processing #{events.size} messages"
+    info "Processing #{messages.size} messages"
+
+    parsed_events = messages.map do |message|
+      next if (match = /\A(?<event_type>[0-9a-z]+)(?<event_data>.*)\z/.match(message)).nil?
+      next if (event_data = match[:event_data].strip).blank?
+
+      begin
+        event_json = JSON.parse(event_data)
+        next unless event_json.is_a?(Array) && event_json[1].respond_to?(:key?) && event_json[1]['_tenantId']
+
+        decodings = event_json[1]['tiraid']['radioDecodings']
+        event_json[1].transform_keys { |key| key.sub(/^_/, '') }.merge(
+          'radioDecodingReceiverIds' => decodings.map { |d| "#{d['identifier']['type']}/#{d['identifier']['value']}" }
+        )
+      rescue JSON::ParserError => e
+        error "Message not valid JSON #{event_data} - #{e}"
+      end
+    end.compact
+
+    return unless parsed_events.present?
 
     es_client.bulk(
-      body: events.map do |event|
+      body: parsed_events.map do |event|
         {
           index: {
             _index: ENV['ELASTICSEARCH_INDEX'],
@@ -62,13 +81,13 @@ class ElasticsearchHandler
               UUIDTools::UUID_OID_NAMESPACE,
               "#{event['time']}-#{event['deviceId']}-#{event['receiverId']}"
             ).to_s,
-            data: event.transform_keys { |key| key.sub(/^_/, '') }
+            data: event
           }
         }
       end
     )
 
-    info "Indexed #{events.size} messages for [#{events.map{ |e| e['deviceId'] }.uniq.join(',')}]"
+    info "Indexed #{parsed_events.size} messages for [#{parsed_events.map { |e| e['deviceId'] }.uniq.join(',')}]"
   rescue StandardError => e
     error "Error encountered - #{e}"
     @es_client = nil
