@@ -62,7 +62,7 @@ class MQTTHandler
     return unless parsed_events.present?
 
     parsed_events.each do |event|
-      topic = "tenants/#{event['_tenantId']}" \
+      topic = "tenants/#{event['tenantId']}" \
               "/transmitters/#{event['tiraid']['identifier']['type']}/#{event['tiraid']['identifier']['value']}" \
               '/events/rtls'
 
