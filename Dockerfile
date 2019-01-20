@@ -35,6 +35,7 @@ RUN \
   gem install --no-document \
     activesupport \
     awesome_print \
+    bunny \
     colorize \
     elasticsearch \
     mqtt \

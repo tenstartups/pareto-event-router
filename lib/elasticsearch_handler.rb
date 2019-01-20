@@ -14,13 +14,12 @@ class ElasticsearchHandler
     raise 'Missing environment ELASTICSEARCH_URL' if ENV['ELASTICSEARCH_URL'].nil?
     raise 'Missing environment ELASTICSEARCH_INDEX' if ENV['ELASTICSEARCH_INDEX'].nil?
     raise 'Missing environment ELASTICSEARCH_TYPE' if ENV['ELASTICSEARCH_TYPE'].nil?
-
-    SocketClient.instance.subscribe_messages('es_message_handler')
   end
 
   def start!
     raise 'Already started' unless process_thread.nil?
 
+    SocketClient.instance.subscribe_messages('es_message_handler')
     self.process_thread = Thread.new do
       until quit_thread?
         message_loop

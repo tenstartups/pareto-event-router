@@ -11,10 +11,12 @@ run: build
 	  -e FORMAT_LOGGING=false \
 		-e PARETO_URL=https://pareto.reelyactive.com \
 		-e PARETO_API_TOKEN=GET_ONE \
-		-e MQTT_URL=mqtt://mqtt:mqtt@emqx:1883 \
 		-e ELASTICSEARCH_URL=http://elasticsearch:9200 \
 		-e ELASTICSEARCH_INDEX=pareto-rtls-events \
 		-e ELASTICSEARCH_TYPE=pareto-rtls-event \
+		-e MQTT_URL=mqtt://mqtt:mqtt@emqx:1883 \
+		-e RABBITMQ_URL=amqp://guest:guest@rabbitmq \
+		-e RABBITMQ_QUEUE=pareto-rtls-events \
 		--net development \
 		--name pareto-event-router \
 		$(DOCKER_IMAGE_NAME) $(ARGS)

@@ -12,8 +12,9 @@ class ParetoEventRouter
     process_threads << SocketClient.instance.tap(&:start!)
 
     # Start the event handler threads
-    process_threads << MQTTHandler.instance.tap(&:start!) if ENV['MQTT_URL']
     process_threads << ElasticsearchHandler.instance.tap(&:start!) if ENV['ELASTICSEARCH_URL']
+    process_threads << MQTTHandler.instance.tap(&:start!) if ENV['MQTT_URL']
+    process_threads << RabbitMQHandler.instance.tap(&:start!) if ENV['RABBITMQ_URL']
 
     # Trap CTRL-C and SIGTERM
     trap('INT') do

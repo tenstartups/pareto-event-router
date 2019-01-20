@@ -1,6 +1,6 @@
-require 'mqtt'
+require 'bunny'
 
-class MQTTHandler
+class RabbitMQHandler
   include Singleton
   include LoggingHelper
 
@@ -8,18 +8,20 @@ class MQTTHandler
 
   def initialize
     # Check for required environment variables
-    raise 'Missing environment MQTT_URL' if ENV['MQTT_URL'].nil?
+    raise 'Missing environment RABBITMQ_URL' if ENV['RABBITMQ_URL'].nil?
+    raise 'Missing environment RABBITMQ_QUEUE' if ENV['RABBITMQ_QUEUE'].nil?
   end
 
   def start!
     raise 'Already started' unless process_thread.nil?
 
-    SocketClient.instance.subscribe_messages('mqtt_message_handler')
+    SocketClient.instance.subscribe_messages('rabbitmq_message_handler')
     self.process_thread = Thread.new do
       until quit_thread?
         message_loop
         sleep 0.05
       end
+      rabbitmq_channel.close
     end
   end
 
@@ -34,12 +36,20 @@ class MQTTHandler
 
   alias quit_thread? quit_thread
 
-  def mqtt_client
-    @mqtt_client ||= MQTT::Client.connect(ENV['MQTT_URL'], clean_session: true, version: '3.1.1')
+  def rabbitmq_client
+    @rabbitmq_client ||= Bunny.new(ENV['RABBITMQ_URL']).tap(&:start)
+  end
+
+  def rabbitmq_channel
+    rabbitmq_client.create_channel
+  end
+
+  def rabbitmq_queue
+    @rabbitmq_queue ||= rabbitmq_channel.queue(ENV['RABBITMQ_QUEUE'], durable: true, auto_delete: false)
   end
 
   def message_loop
-    messages = SocketClient.instance.drain_messages('mqtt_message_handler')
+    messages = SocketClient.instance.drain_messages('rabbitmq_message_handler')
     return unless messages.present?
 
     info "Processing #{messages.size} messages"
@@ -61,21 +71,17 @@ class MQTTHandler
     return unless parsed_events.present?
 
     parsed_events.each do |event|
-      topic = "tenants/#{event['tenantId']}" \
-              "/transmitters/#{event['tiraid']['identifier']['type']}/#{event['tiraid']['identifier']['value']}" \
-              '/events/rtls'
+      # topic = "tenants/#{event['tenantId']}" \
+      #         "/transmitters/#{event['tiraid']['identifier']['type']}/#{event['tiraid']['identifier']['value']}" \
+      #         '/events/rtls'
 
-      # Publish to MQTT
-      info "Publishing event to topic #{topic}"
-      mqtt_client.publish(
-        topic,
-        event.to_json,
-        false,
-        1
-      )
+      # Publish to RabbitMQ
+      info "Publishing event to #{ENV['RABBITMQ_QUEUE']} queue"
+      rabbitmq_queue.publish(event.to_json)
     end
-  rescue StandardError, MQTT::Exception => e
+  rescue StandardError => e
     error "Error encountered - #{e}"
-    @mqtt_client = nil
+    rabbitmq_channel.close
+    @rabbitmq_client = nil
   end
 end
